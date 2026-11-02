@@ -1,0 +1,10 @@
+logs
+bin
+coverage.out
+coverage.html
+.git
+*.md
+.env*
+!.env.example
+test
+Makefile

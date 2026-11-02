@@ -1,0 +1,39 @@
+services:
+  conduit-postgres:
+    image: postgres:18.3
+    container_name: conduit-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-conduit}
+      POSTGRES_USER: ${DB_USER:-conduit}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required, run make docker/env}
+    volumes:
+      - conduit-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  conduit-backend:
+    build:
+      context: ../conduit-backend
+      dockerfile: ../conduit-docker/conduit-backend-echo/Dockerfile
+    image: conduit-backend-echo:local
+    container_name: conduit-backend
+    restart: unless-stopped
+    environment:
+      APP_LEVEL: ${APP_LEVEL:-development}
+      DATABASE_URL: postgres://${DB_USER:-conduit}:${DB_PASSWORD}@conduit-postgres:5432/${DB_NAME:-conduit}
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required, run make docker/env}
+      AUTH_TOKEN_TTL: ${AUTH_TOKEN_TTL:-7d}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:3000}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${PORT:-8080}:8080"
+    depends_on:
+      conduit-postgres:
+        condition: service_healthy
+
+volumes:
+  conduit-postgres-data:
