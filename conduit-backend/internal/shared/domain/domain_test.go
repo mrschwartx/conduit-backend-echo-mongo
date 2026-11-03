@@ -202,8 +202,8 @@ func TestTimestampHelpers(t *testing.T) {
 	if got := FormatTimestamp(value); got != "2026-03-04T04:06:07.123Z" {
 		t.Errorf("format = %s", got)
 	}
-	if got := TruncateToMicrosecond(value).Nanosecond(); got != 123456000 {
-		t.Errorf("µs truncation = %d", got)
+	if got := TruncateToMillisecond(value).Nanosecond(); got != 123000000 {
+		t.Errorf("ms truncation = %d", got)
 	}
 }
 

@@ -143,7 +143,7 @@ func TestUserLifecycle(t *testing.T) {
 	user := Register(Registration{ID: "id", Username: username, Email: email, PasswordHash: "hash", Now: now})
 
 	snapshot := user.Snapshot()
-	if snapshot.Bio != nil || snapshot.Image != nil || snapshot.CreatedAt.Nanosecond() != 123456000 || !snapshot.CreatedAt.Equal(snapshot.UpdatedAt) {
+	if snapshot.Bio != nil || snapshot.Image != nil || snapshot.CreatedAt.Nanosecond() != 123000000 || !snapshot.CreatedAt.Equal(snapshot.UpdatedAt) {
 		t.Fatalf("unexpected snapshot %+v", snapshot)
 	}
 
@@ -156,7 +156,7 @@ func TestUserLifecycle(t *testing.T) {
 	if user.Username().Value() != "johnny" || user.Email().Value() != "john@mail.com" || user.PasswordHash() != "new-hash" {
 		t.Fatalf("unexpected user %+v", user.Snapshot())
 	}
-	if *user.Bio().Value() != "hi" || *user.Image().Value() != "https://example.com/a.png" || !user.UpdatedAt().Equal(later.Truncate(time.Microsecond)) {
+	if *user.Bio().Value() != "hi" || *user.Image().Value() != "https://example.com/a.png" || !user.UpdatedAt().Equal(later.Truncate(time.Millisecond)) {
 		t.Fatalf("unexpected profile %+v", user.Snapshot())
 	}
 
@@ -167,7 +167,7 @@ func TestUserLifecycle(t *testing.T) {
 	}
 
 	restored := Restore(user.Snapshot())
-	if !reflect.DeepEqual(restored.Snapshot(), user.Snapshot()) || restored.ID() != "id" || !restored.CreatedAt().Equal(now.Truncate(time.Microsecond)) {
+	if !reflect.DeepEqual(restored.Snapshot(), user.Snapshot()) || restored.ID() != "id" || !restored.CreatedAt().Equal(now.Truncate(time.Millisecond)) {
 		t.Fatal("restore must round trip")
 	}
 }

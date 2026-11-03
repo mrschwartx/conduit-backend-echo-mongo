@@ -257,7 +257,7 @@ func TestServerRefusesToStartWithInvalidConfiguration(t *testing.T) {
 
 func TestServerFailsWhenTheDatabaseIsUnreachable(t *testing.T) {
 	process := start(t, apiBinary, map[string]string{
-		"DATABASE_URL":     "postgres://nobody:nothing@127.0.0.1:1/none",
+		"DATABASE_URL":     "mongodb://nobody:nothing@127.0.0.1:1/none",
 		"DATABASE_TIMEOUT": "500",
 	})
 	if code := process.wait(t); code == 0 {

@@ -7,11 +7,17 @@ import (
 	"net/url"
 	"os"
 	"testing"
+	"time"
 
-	"github.com/jackc/pgx/v5"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+
+	"conduit/backend/internal/shared/infrastructure/mongodb"
 )
 
-const DefaultTestDatabaseURL = "postgres://dev_user:dev_pass@localhost:5432/conduit_dev"
+const (
+	DefaultTestDatabaseURL = "mongodb://dev_user:dev_pass@localhost:27017/?authSource=admin"
+	databaseTimeout        = 10 * time.Second
+)
 
 type TestDatabase struct {
 	Name string
@@ -25,25 +31,46 @@ func StartTestDatabase(tb testing.TB) *TestDatabase {
 	if adminURL == "" {
 		adminURL = DefaultTestDatabaseURL
 	}
-	name := RandomDatabaseName()
-
-	withAdminConn(tb, adminURL, func(ctx context.Context, conn *pgx.Conn) error {
-		_, err := conn.Exec(ctx, "CREATE DATABASE "+pgx.Identifier{name}.Sanitize())
-		return err
-	})
-	tb.Cleanup(func() {
-		withAdminConn(tb, adminURL, func(ctx context.Context, conn *pgx.Conn) error {
-			_, err := conn.Exec(ctx, "DROP DATABASE IF EXISTS "+pgx.Identifier{name}.Sanitize()+" WITH (FORCE)")
-			return err
-		})
-	})
-
 	parsed, err := url.Parse(adminURL)
 	if err != nil {
 		tb.Fatalf("invalid TEST_DATABASE_URL: %v", err)
 	}
+
+	name := RandomDatabaseName()
 	parsed.Path = "/" + name
-	return &TestDatabase{Name: name, URL: parsed.String()}
+	query := parsed.Query()
+	if parsed.User != nil && query.Get("authSource") == "" {
+		query.Set("authSource", "admin")
+	}
+	parsed.RawQuery = query.Encode()
+	database := &TestDatabase{Name: name, URL: parsed.String()}
+
+	db := ConnectTestDatabase(tb, database.URL)
+	tb.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), databaseTimeout)
+		defer cancel()
+		if err := db.Drop(ctx); err != nil {
+			tb.Errorf("cannot drop the test database: %v", err)
+		}
+	})
+	return database
+}
+
+func ConnectTestDatabase(tb testing.TB, databaseURL string) *mongo.Database {
+	tb.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), databaseTimeout)
+	defer cancel()
+
+	db, err := mongodb.Connect(ctx, mongodb.ConnectionConfig{URL: databaseURL, PoolMax: 4, Timeout: databaseTimeout})
+	if err != nil {
+		tb.Fatalf("cannot connect to the test MongoDB server: %v", err)
+	}
+	tb.Cleanup(func() {
+		if err := mongodb.Close(context.Background(), db); err != nil {
+			tb.Errorf("cannot close the test connection: %v", err)
+		}
+	})
+	return db
 }
 
 func RandomDatabaseName() string {
@@ -52,17 +79,4 @@ func RandomDatabaseName() string {
 		panic(err)
 	}
 	return "conduit_test_" + hex.EncodeToString(suffix)
-}
-
-func withAdminConn(tb testing.TB, adminURL string, run func(context.Context, *pgx.Conn) error) {
-	tb.Helper()
-	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, adminURL)
-	if err != nil {
-		tb.Fatalf("cannot connect to the test PostgreSQL server: %v", err)
-	}
-	defer conn.Close(ctx)
-	if err := run(ctx, conn); err != nil {
-		tb.Fatalf("admin statement failed: %v", err)
-	}
 }

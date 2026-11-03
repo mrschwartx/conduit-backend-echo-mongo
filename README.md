@@ -1,10 +1,10 @@
 # Conduit Backend (Echo)
 
-A Medium-style blogging platform backend that implements the [RealWorld](https://realworld-docs.netlify.app/) "Conduit" API contract: register and sign in, manage a profile, follow authors, publish articles with tags, favorite articles and comment on them. It is a REST API built with Go, Echo v5 and PostgreSQL, organised as a modular monolith with Domain-Driven Design and Clean Architecture.
+A Medium-style blogging platform backend that implements the [RealWorld](https://realworld-docs.netlify.app/) "Conduit" API contract: register and sign in, manage a profile, follow authors, publish articles with tags, favorite articles and comment on them. It is a REST API built with Go, Echo v5 and MongoDB, organised as a modular monolith with Domain-Driven Design and Clean Architecture.
 
 The browser client is the separate Conduit React frontend. This backend is interchangeable with the Express implementation because both follow the same OpenAPI contract in `conduit-openapi/openapi.yml`.
 
-**Stack:** Go 1.27 · Echo v5 · PostgreSQL 18 · pgx · JWT · bcrypt · log/slog · testing · Docker · GitHub Actions
+**Stack:** Go 1.27 · Echo v5 · MongoDB 8 · mongo-driver v2 · JWT · bcrypt · log/slog · testing · Docker · GitHub Actions
 
 ## Contents
 
@@ -18,6 +18,7 @@ The browser client is the separate Conduit React frontend. This backend is inter
 - [CI](#ci)
 - [Limits](#limits)
 - [Migrated from Taskly](#migrated-from-taskly)
+- [Migrated from PostgreSQL to MongoDB](#migrated-from-postgresql-to-mongodb)
 - [References](#references)
 
 ## Quick start
@@ -33,7 +34,7 @@ make secret-key
 make run
 ```
 
-Paste the generated value into `AUTH_SECRET` in `.env`. The API runs at http://localhost:8080 and pgAdmin at http://localhost:8081 (login `admin@conduit.dev` / `admin`, server host `conduit-postgres`, user `dev_user`, password `dev_pass`). Migrations run automatically on startup. The `.env` file is loaded when present, and real environment variables always take precedence.
+Paste the generated value into `AUTH_SECRET` in `.env`. The API runs at http://localhost:8080 and mongo-express at http://localhost:8081 (no login, connected as `dev_user` / `dev_pass`). Indexes and collection rules are created automatically on startup. The `.env` file is loaded when present, and real environment variables always take precedence.
 
 | Goal               | Command                                    |
 | ------------------ | ------------------------------------------ |
@@ -45,7 +46,7 @@ Paste the generated value into `AUTH_SECRET` in `.env`. The API runs at http://l
 | Seed in Docker     | `make docker/seed` (from `conduit-docker`) |
 | Stop Docker        | `make docker/down` (from `conduit-docker`) |
 
-`make docker/up` creates `conduit-docker/.env` with a random database password and `AUTH_SECRET` on the first run, then starts PostgreSQL and the API and waits until both are healthy. `PORT` overrides the host port in the Docker setup. The container always listens on port 8080.
+`make docker/up` creates `conduit-docker/.env` with a random database password and `AUTH_SECRET` on the first run, then starts MongoDB and the API and waits until both are healthy. `PORT` overrides the host port in the Docker setup. The container always listens on port 8080.
 
 Demo logins after seeding: `johndoe123@mail.com` / `password123` and `jane@mail.com` / `securepassword456`. Seeding stops quietly when the first demo user already exists, so running it twice never duplicates data.
 
@@ -58,7 +59,7 @@ Demo logins after seeding: `johndoe123@mail.com` / `password123` and `jane@mail.
 - **Listing**: filter by tag, author and favorited user, paginate with `limit` and `offset`, and read a personal feed of followed authors.
 - **Favorites and tags**: favorite and unfavorite articles, list the most used tags.
 - **Comments**: create, list and delete comments; deleting an article removes its comments.
-- **Platform**: versioned SQL migrations embedded in the binary, structured logging with daily rotation, graceful shutdown on `SIGINT` and `SIGTERM`, health check on `/health`.
+- **Platform**: versioned MongoDB migrations (indexes and collection rules) applied from the binary, structured logging with daily rotation, graceful shutdown on `SIGINT` and `SIGTERM`, health check on `/health`.
 
 ## Configuration
 
@@ -68,7 +69,7 @@ Demo logins after seeding: `johndoe123@mail.com` / `password123` and `jane@mail.
 | `APP_HOST`              | `0.0.0.0`               | Bind address                                         |
 | `APP_PORT`              | `8080`                  | Port the API listens on                              |
 | `APP_LEVEL`             | `development`           | Environment level                                    |
-| `DATABASE_URL`          | required                | PostgreSQL connection string                         |
+| `DATABASE_URL`          | required                | MongoDB connection string; the database name is its path, `conduit` when omitted |
 | `DATABASE_POOL_MAX`     | `10`                    | Maximum connections in the pool                      |
 | `DATABASE_TIMEOUT`      | `30000`                 | Connection timeout in milliseconds                   |
 | `AUTH_SECRET`           | required                | JWT secret, at least 32 characters                   |
@@ -86,9 +87,9 @@ Docker only, in `conduit-docker/.env`:
 | Variable         | Default   | Purpose                                 |
 | ---------------- | --------- | --------------------------------------- |
 | `PORT`           | `8080`    | Host port used by Docker                |
-| `DB_NAME`        | `conduit` | PostgreSQL database name                |
-| `DB_USER`        | `conduit` | PostgreSQL user                         |
-| `DB_PASSWORD`    | required  | PostgreSQL password, generated by make  |
+| `DB_NAME`        | `conduit` | MongoDB database name                   |
+| `DB_USER`        | `conduit` | MongoDB root user                       |
+| `DB_PASSWORD`    | required  | MongoDB root password, generated by make |
 | `AUTH_TOKEN_TTL` | `7d`      | Token lifetime                          |
 
 The frontend must set its API base URL to `http://localhost:8080/api/v1`.
@@ -106,11 +107,11 @@ conduit-backend/
   internal/
     bootstrap/   composition root, app and server factories
     config/      environment parsing and validation
-    shared/      errors, validation, pagination, event bus, logging, HTTP and PostgreSQL helpers
+    shared/      errors, validation, pagination, event bus, logging, HTTP and MongoDB helpers
     modules/     users, articles, comments
   test/
     support/     helpers shared by integration and e2e suites
-    integration/ repositories and HTTP modules on a real PostgreSQL
+    integration/ repositories and HTTP modules on a real MongoDB
     e2e/         built binaries run as real processes
 conduit-docker/
   conduit-backend-echo/Dockerfile
@@ -128,7 +129,7 @@ conduit-openapi/
 internal/modules/<name>/
   domain/                  entities, value objects, repository contracts
   application/             use cases and ports
-  infrastructure/          PostgreSQL and other adapters
+  infrastructure/          MongoDB and other adapters
   presentation/rest/       Echo handlers, middleware and routes
   module.go                wires the module and registers its routes
 ```
@@ -139,7 +140,7 @@ internal/modules/<name>/
 - Modules never import each other. What articles and comments need from users is the `AuthorDirectory` port declared in `shared/application`, which the users module implements. Comments need `ArticleCatalog`, which the articles module implements. The composition root in `bootstrap` wires them.
 - Modules also communicate through the in-process event bus: deleting an article publishes `article.deleted` and the comments module removes that article's comments.
 - Every I/O call takes a `context.Context`, so client disconnects and shutdown propagate to the database.
-- Multi-row writes (an article with its tags) run in a transaction through `postgres.WithTransaction`.
+- Every write touches a single document, so no multi-document transaction is needed and a standalone MongoDB server is enough. An article keeps its tags and the ids of the users who favorited it inside its own document.
 
 ### Request pipeline
 
@@ -151,20 +152,19 @@ internal/modules/<name>/
 
 ## Database
 
-Schema changes live in `internal/shared/infrastructure/postgres/migrations` as numbered `.sql` files and are embedded in the binaries. The migrator applies pending files in order, each inside a transaction, records them in `schema_migrations` and holds an advisory lock so concurrent starts do not race. It runs on every startup and through `make migrate`.
+Collections and indexes are defined in `internal/shared/infrastructure/mongodb/migrator.go`. The migrator applies pending migrations in order and records them in `schema_migrations`. Index creation is idempotent, so concurrent starts do not race and each migration is recorded exactly once. It runs on every startup and through `make migrate`. The database name comes from the path of `DATABASE_URL`.
 
-| Table          | Notes                                                                                           |
-| -------------- | ----------------------------------------------------------------------------------------------- |
-| `users`        | `id` UUID, case-insensitive unique `email` and `username`, `password_hash`, nullable `bio` and `image`, timestamps |
-| `follows`      | `(follower_id, followed_id)` primary key, both reference `users` with `ON DELETE CASCADE`, a user cannot follow themselves |
-| `articles`     | `id` UUID, `author_id`, unique `slug`, `title`, `description`, `body`, timestamps, `seq` for stable ordering |
-| `article_tags` | `(article_id, position)` primary key keeps tag order, indexed on `tag`                          |
-| `favorites`    | `(user_id, article_id)` primary key                                                              |
-| `comments`     | `id` bigint identity, `article_id`, `author_id`, `body`, timestamps                              |
+| Collection    | Notes                                                                                           |
+| ------------- | ----------------------------------------------------------------------------------------------- |
+| `users`       | `_id` UUID string, `username`, `email`, `passwordHash`, nullable `bio` and `image`, timestamps. Unique indexes on the lowercased `usernameLower` and `emailLower` make both case-insensitive |
+| `follows`     | One document per `(followerId, followedId)` with a unique index; a collection rule rejects following yourself |
+| `articles`    | `_id` UUID string, `authorId`, unique `slug` (a collection rule rejects `feed`), `title`, `description`, `body`, ordered `tagList`, `favoritedBy` user ids, timestamps, `seq` for stable ordering |
+| `comments`    | `_id` integer from a counter, `articleId`, `authorId`, `body`, timestamps                       |
+| `counters`    | Atomic sequences behind article `seq` and comment ids                                           |
 
-- Listings are ordered by `created_at` and `seq`, newest first.
-- Deleting an article cascades to its tags, favorites and comments.
-- Timestamps are returned as ISO 8601 UTC strings with milliseconds, for example `2026-12-08T10:00:00.000Z`.
+- Listings are ordered by `createdAt` and `seq`, newest first.
+- Deleting an article removes its tags and favorites with the document. Its comments are removed through the `article.deleted` event.
+- Timestamps are stored with millisecond precision and returned as ISO 8601 UTC strings, for example `2026-12-08T10:00:00.000Z`.
 
 ## API
 
@@ -222,14 +222,14 @@ Contract decisions:
 | Suite       | Command                | What it covers                                                       |
 | ----------- | ---------------------- | -------------------------------------------------------------------- |
 | Unit        | `make test/unit`       | Domain rules, use cases with in-memory fakes, HTTP helpers, config, JWT and bcrypt |
-| Integration | `make test/integration`| Repositories, migrations and every HTTP route on a real PostgreSQL   |
+| Integration | `make test/integration`| Repositories, migrations and every HTTP route on a real MongoDB      |
 | End to end  | `make test/e2e`        | Built binaries run as processes: startup, shutdown, seed and a user journey |
 
-Integration and e2e tests create a throwaway database per test through `TEST_DATABASE_URL`, which defaults to the development database from `docker-compose.dev.yml`. `make test/coverage` writes `coverage.out`.
+Integration and e2e tests create a throwaway database per test through `TEST_DATABASE_URL`, which points at the MongoDB server from `docker-compose.dev.yml` by default; each test uses its own randomly named database and drops it afterwards. `make test/coverage` writes `coverage.out`.
 
 ## CI
 
-`.github/workflows/ci.yml` runs formatting, `go vet` and `go mod tidy -diff`, then all three test suites against a PostgreSQL service, then builds the Docker stack, checks `/health`, registers a user and runs the seed.
+`.github/workflows/ci.yml` runs formatting, `go vet` and `go mod tidy -diff`, then all three test suites against a MongoDB service, then builds the Docker stack, checks `/health`, registers a user and runs the seed.
 
 ## Limits
 
@@ -259,8 +259,18 @@ This codebase used to be a task manager. The Taskly modules, routes and cookie a
 - Errors changed from `{ "message": ... }` to `{ "errors": { ... } }`.
 - Data from the Taskly schema is not migrated. Start with an empty database.
 
+## Migrated from PostgreSQL to MongoDB
+
+The persistence layer was rewritten for MongoDB. The domain, application and REST layers, the API contract and the environment variable names are unchanged, with these consequences:
+
+- `DATABASE_URL` is now a MongoDB connection string, for example `mongodb://user:password@localhost:27017/conduit?authSource=admin`.
+- Timestamps use millisecond precision instead of microsecond, which is what BSON dates store and what the API already returned.
+- Foreign keys and cascades no longer exist in the database. Deleting an article removes its comments through the `article.deleted` event, so a failure in that handler can leave comments behind.
+- Favorites live inside the article document, which is simple and fast for normal use but bounded by the 16 MB document limit.
+- Data from the PostgreSQL schema is not migrated. Start with an empty database.
+
 ## References
 
 - [RealWorld API spec](https://realworld-docs.netlify.app/)
 - `conduit-openapi/openapi.yml`
-- [Echo](https://echo.labstack.com/) · [pgx](https://github.com/jackc/pgx) · [golang-jwt](https://github.com/golang-jwt/jwt)
+- [Echo](https://echo.labstack.com/) · [MongoDB Go driver](https://github.com/mongodb/mongo-go-driver) · [golang-jwt](https://github.com/golang-jwt/jwt)

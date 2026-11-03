@@ -18,7 +18,7 @@ func ProjectRoot() string {
 func TestEnv(overrides map[string]string) map[string]string {
 	env := map[string]string{
 		"AUTH_SECRET":   TestAuthSecret,
-		"DATABASE_URL":  "postgres://127.0.0.1:5432/conduit",
+		"DATABASE_URL":  "mongodb://127.0.0.1:27017/conduit",
 		"APP_HOST":      "127.0.0.1",
 		"APP_PORT":      "0",
 		"BCRYPT_ROUNDS": "4",

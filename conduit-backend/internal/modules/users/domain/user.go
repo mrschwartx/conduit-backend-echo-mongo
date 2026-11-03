@@ -47,7 +47,7 @@ type ProfileChanges struct {
 }
 
 func Register(registration Registration) User {
-	timestamp := sharedomain.TruncateToMicrosecond(registration.Now)
+	timestamp := sharedomain.TruncateToMillisecond(registration.Now)
 	return User{
 		id:           registration.ID,
 		username:     registration.Username,
@@ -96,7 +96,7 @@ func (u *User) UpdateProfile(changes ProfileChanges, now time.Time) {
 	if changes.SetImage {
 		u.image = changes.Image
 	}
-	u.updatedAt = sharedomain.TruncateToMicrosecond(now)
+	u.updatedAt = sharedomain.TruncateToMillisecond(now)
 }
 
 func (u User) Snapshot() Snapshot {

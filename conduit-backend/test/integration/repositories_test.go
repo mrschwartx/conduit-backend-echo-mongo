@@ -9,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	articlesdomain "conduit/backend/internal/modules/articles/domain"
 	articlesinfra "conduit/backend/internal/modules/articles/infrastructure"
@@ -18,7 +19,7 @@ import (
 	usersdomain "conduit/backend/internal/modules/users/domain"
 	usersinfra "conduit/backend/internal/modules/users/infrastructure"
 	sharedomain "conduit/backend/internal/shared/domain"
-	"conduit/backend/internal/shared/infrastructure/postgres"
+	"conduit/backend/internal/shared/infrastructure/mongodb"
 	"conduit/backend/test/support"
 )
 
@@ -27,35 +28,27 @@ func connect(t *testing.T) context.Context {
 	return context.Background()
 }
 
-func newPool(t *testing.T) (context.Context, *pgxpool.Pool) {
+func newDatabase(t *testing.T) (context.Context, *mongo.Database) {
 	t.Helper()
 	ctx := connect(t)
 	database := support.StartTestDatabase(t)
-	pool, err := postgres.Connect(ctx, postgres.ConnectionConfig{URL: database.URL, PoolMax: 4, Timeout: 5 * time.Second})
-	if err != nil {
+	db := support.ConnectTestDatabase(t, database.URL)
+	if _, err := mongodb.RunMigrations(ctx, db, mongodb.Migrations(), nil); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(pool.Close)
-	if _, err := postgres.RunMigrations(ctx, pool, postgres.EmbeddedMigrations(), nil); err != nil {
-		t.Fatal(err)
-	}
-	return ctx, pool
+	return ctx, db
 }
 
 func TestMigrationsAreIdempotent(t *testing.T) {
 	ctx := connect(t)
 	database := support.StartTestDatabase(t)
-	pool, err := postgres.Connect(ctx, postgres.ConnectionConfig{URL: database.URL, PoolMax: 4, Timeout: 5 * time.Second})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
+	db := support.ConnectTestDatabase(t, database.URL)
 
-	first, err := postgres.RunMigrations(ctx, pool, postgres.EmbeddedMigrations(), nil)
+	first, err := mongodb.RunMigrations(ctx, db, mongodb.Migrations(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := postgres.RunMigrations(ctx, pool, postgres.EmbeddedMigrations(), nil)
+	second, err := mongodb.RunMigrations(ctx, db, mongodb.Migrations(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,27 +59,32 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 func TestMigrationsSurviveConcurrentStarts(t *testing.T) {
 	ctx := connect(t)
 	database := support.StartTestDatabase(t)
-	pool, err := postgres.Connect(ctx, postgres.ConnectionConfig{URL: database.URL, PoolMax: 8, Timeout: 5 * time.Second})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
+	db := support.ConnectTestDatabase(t, database.URL)
 
-	results := make(chan error, 4)
+	type outcome struct {
+		executed []string
+		err      error
+	}
+	results := make(chan outcome, 4)
 	for range 4 {
 		go func() {
-			_, err := postgres.RunMigrations(ctx, pool, postgres.EmbeddedMigrations(), nil)
-			results <- err
+			executed, err := mongodb.RunMigrations(ctx, db, mongodb.Migrations(), nil)
+			results <- outcome{executed: executed, err: err}
 		}()
 	}
+
+	applied := 0
 	for range 4 {
-		if err := <-results; err != nil {
-			t.Fatal(err)
+		result := <-results
+		if result.err != nil {
+			t.Fatal(result.err)
 		}
+		applied += len(result.executed)
 	}
+	expectEqual(t, applied, 4)
 }
 
-func buildUser(t *testing.T, repo *usersinfra.PostgresRepository, username, email string, now time.Time) usersdomain.User {
+func buildUser(t *testing.T, repo *usersinfra.MongoRepository, username, email string, now time.Time) usersdomain.User {
 	t.Helper()
 	name, err := usersdomain.NewUsername(sharedomain.RawString(username))
 	if err != nil {
@@ -100,8 +98,8 @@ func buildUser(t *testing.T, repo *usersinfra.PostgresRepository, username, emai
 }
 
 func TestUserRepository(t *testing.T) {
-	ctx, pool := newPool(t)
-	users := usersinfra.NewPostgresRepository(pool)
+	ctx, db := newDatabase(t)
+	users := usersinfra.NewMongoRepository(db)
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	user := buildUser(t, users, "JohnDoe", "John@Mail.com", base)
@@ -210,9 +208,9 @@ func TestUserRepository(t *testing.T) {
 }
 
 func TestFollowRepository(t *testing.T) {
-	ctx, pool := newPool(t)
-	users := usersinfra.NewPostgresRepository(pool)
-	follows := usersinfra.NewPostgresFollowRepository(pool)
+	ctx, db := newDatabase(t)
+	users := usersinfra.NewMongoRepository(db)
+	follows := usersinfra.NewMongoFollowRepository(db)
 	now := time.Now()
 	a := buildUser(t, users, "alpha", "a@mail.com", now)
 	b := buildUser(t, users, "bravo", "b@mail.com", now)
@@ -267,7 +265,7 @@ func rawTags(values ...string) sharedomain.Raw {
 	return sharedomain.RawOf(entries)
 }
 
-func buildArticle(t *testing.T, repo *articlesinfra.PostgresRepository, authorID, slug, title string, tags []string, now time.Time) articlesdomain.Article {
+func buildArticle(t *testing.T, repo *articlesinfra.MongoRepository, authorID, slug, title string, tags []string, now time.Time) articlesdomain.Article {
 	t.Helper()
 	articleTitle, _ := articlesdomain.NewArticleTitle(sharedomain.RawString(title))
 	description, _ := articlesdomain.NewArticleDescription(sharedomain.RawString("About " + title))
@@ -283,9 +281,9 @@ func buildArticle(t *testing.T, repo *articlesinfra.PostgresRepository, authorID
 }
 
 func TestArticleRepository(t *testing.T) {
-	ctx, pool := newPool(t)
-	users := usersinfra.NewPostgresRepository(pool)
-	articles := articlesinfra.NewPostgresRepository(pool)
+	ctx, db := newDatabase(t)
+	users := usersinfra.NewMongoRepository(db)
+	articles := articlesinfra.NewMongoRepository(db)
 	now := time.Now()
 	author := buildUser(t, users, "author", "author@mail.com", now)
 	reader := buildUser(t, users, "reader", "reader@mail.com", now)
@@ -465,9 +463,11 @@ func TestArticleRepository(t *testing.T) {
 		if _, ok, _ := articles.FindBySlug(ctx, "first"); ok {
 			t.Fatal("the article is gone")
 		}
-		var leftovers int
-		pool.QueryRow(ctx, "SELECT (SELECT count(*) FROM article_tags WHERE article_id = $1) + (SELECT count(*) FROM favorites WHERE article_id = $1)", first.ID()).Scan(&leftovers)
-		expectEqual(t, leftovers, 0)
+		leftovers, err := db.Collection(mongodb.CollectionArticles).CountDocuments(ctx, bson.D{{Key: "_id", Value: first.ID()}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		expectEqual(t, leftovers, int64(0))
 		if deleted, _ := articles.DeleteByID(ctx, first.ID()); deleted {
 			t.Fatal("deleting twice reports false")
 		}
@@ -475,10 +475,10 @@ func TestArticleRepository(t *testing.T) {
 }
 
 func TestCommentRepository(t *testing.T) {
-	ctx, pool := newPool(t)
-	users := usersinfra.NewPostgresRepository(pool)
-	articles := articlesinfra.NewPostgresRepository(pool)
-	comments := commentsinfra.NewPostgresRepository(pool)
+	ctx, db := newDatabase(t)
+	users := usersinfra.NewMongoRepository(db)
+	articles := articlesinfra.NewMongoRepository(db)
+	comments := commentsinfra.NewMongoRepository(db)
 	now := time.Now()
 
 	author := buildUser(t, users, "author", "author@mail.com", now)
@@ -538,9 +538,10 @@ func TestCommentRepository(t *testing.T) {
 		t.Fatalf("got %d %v", count, err)
 	}
 
-	add(other.ID(), "cascade me", now)
-	if _, err := articles.DeleteByID(ctx, other.ID()); err != nil {
-		t.Fatal(err)
+	add(other.ID(), "another", now)
+	count, err = comments.DeleteByArticle(ctx, other.ID())
+	if err != nil || count != 2 {
+		t.Fatalf("got %d %v", count, err)
 	}
 	remaining, _ := comments.ListByArticle(ctx, other.ID())
 	expectEqual(t, len(remaining), 0)

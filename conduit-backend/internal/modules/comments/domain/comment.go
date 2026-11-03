@@ -46,7 +46,7 @@ type NewComment struct {
 }
 
 func Create(params NewComment) Comment {
-	timestamp := sharedomain.TruncateToMicrosecond(params.Now)
+	timestamp := sharedomain.TruncateToMillisecond(params.Now)
 	return Comment{
 		articleID: params.ArticleID,
 		authorID:  params.AuthorID,

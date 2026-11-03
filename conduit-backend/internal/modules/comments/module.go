@@ -4,17 +4,17 @@ import (
 	"context"
 
 	"github.com/labstack/echo/v5"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"conduit/backend/internal/modules/comments/application"
 	"conduit/backend/internal/modules/comments/infrastructure"
 	"conduit/backend/internal/modules/comments/presentation/rest"
 	sharedapp "conduit/backend/internal/shared/application"
 	sharedomain "conduit/backend/internal/shared/domain"
-	"conduit/backend/internal/shared/infrastructure/postgres"
 )
 
 type Dependencies struct {
-	DB                   postgres.Querier
+	DB                   *mongo.Database
 	Events               sharedapp.EventBus
 	Authors              sharedapp.AuthorDirectory
 	Articles             application.ArticleCatalog
@@ -38,7 +38,7 @@ type Module struct {
 }
 
 func NewModule(deps Dependencies) *Module {
-	repository := infrastructure.NewPostgresRepository(deps.DB)
+	repository := infrastructure.NewMongoRepository(deps.DB)
 
 	useCases := UseCases{
 		CreateComment:           application.NewCreateComment(repository, deps.Articles, deps.Authors),

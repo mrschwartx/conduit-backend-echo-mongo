@@ -13,7 +13,7 @@ func lookup(values map[string]string) func(string) string {
 }
 
 func baseEnv() map[string]string {
-	return map[string]string{"AUTH_SECRET": validSecret, "DATABASE_URL": "postgres://localhost/conduit"}
+	return map[string]string{"AUTH_SECRET": validSecret, "DATABASE_URL": "mongodb://localhost/conduit"}
 }
 
 func TestLoadAppliesDefaults(t *testing.T) {

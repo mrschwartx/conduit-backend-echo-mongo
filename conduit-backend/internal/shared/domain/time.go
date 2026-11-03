@@ -8,6 +8,6 @@ func FormatTimestamp(value time.Time) string {
 	return value.UTC().Format(timestampLayout)
 }
 
-func TruncateToMicrosecond(value time.Time) time.Time {
-	return value.UTC().Truncate(time.Microsecond)
+func TruncateToMillisecond(value time.Time) time.Time {
+	return value.UTC().Truncate(time.Millisecond)
 }

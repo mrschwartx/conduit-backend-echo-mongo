@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"conduit/backend/internal/shared/infrastructure/mongodb"
 	"conduit/backend/test/support"
 )
 
@@ -283,10 +286,15 @@ func TestDeleteArticle(t *testing.T) {
 	expectProblem(t, author.client.Get(path), 404, "article", "not found")
 	expectProblem(t, author.client.Delete(path, author.auth()), 404, "article", "not found")
 
-	var leftovers int
-	database := app.Container.Pool
-	database.QueryRow(context.Background(), "SELECT (SELECT count(*) FROM comments) + (SELECT count(*) FROM favorites) + (SELECT count(*) FROM article_tags)").Scan(&leftovers)
-	expectEqual(t, leftovers, 0)
+	var leftovers int64
+	for _, name := range []string{mongodb.CollectionArticles, mongodb.CollectionComments} {
+		count, err := app.Container.Database.Collection(name).CountDocuments(context.Background(), bson.D{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		leftovers += count
+	}
+	expectEqual(t, leftovers, int64(0))
 }
 
 func TestFavorites(t *testing.T) {

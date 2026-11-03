@@ -50,7 +50,7 @@ type Revision struct {
 }
 
 func Create(params NewArticle) Article {
-	timestamp := sharedomain.TruncateToMicrosecond(params.Now)
+	timestamp := sharedomain.TruncateToMillisecond(params.Now)
 	return Article{
 		id:          params.ID,
 		authorID:    params.AuthorID,
@@ -108,7 +108,7 @@ func (a *Article) Revise(revision Revision, now time.Time) {
 	if revision.TagList != nil {
 		a.tagList = *revision.TagList
 	}
-	a.updatedAt = sharedomain.TruncateToMicrosecond(now)
+	a.updatedAt = sharedomain.TruncateToMillisecond(now)
 }
 
 func (a Article) Snapshot() Snapshot {

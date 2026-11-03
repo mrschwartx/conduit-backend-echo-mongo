@@ -1,5 +1,5 @@
 GO ?= go
-TEST_DATABASE_URL ?= postgres://dev_user:dev_pass@localhost:5432/conduit_dev
+TEST_DATABASE_URL ?= mongodb://dev_user:dev_pass@localhost:27017/?authSource=admin
 
 .PHONY: run build migrate seed fmt fmt-check vet tidy-check test test/unit test/integration test/e2e test/coverage secret-key
 

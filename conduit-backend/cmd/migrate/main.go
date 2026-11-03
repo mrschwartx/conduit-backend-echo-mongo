@@ -9,7 +9,7 @@ import (
 
 	"conduit/backend/internal/config"
 	"conduit/backend/internal/shared/infrastructure/logging"
-	"conduit/backend/internal/shared/infrastructure/postgres"
+	"conduit/backend/internal/shared/infrastructure/mongodb"
 )
 
 func main() {
@@ -32,7 +32,7 @@ func run() int {
 	}
 	defer closeLogger()
 
-	pool, err := postgres.Connect(ctx, postgres.ConnectionConfig{
+	db, err := mongodb.Connect(ctx, mongodb.ConnectionConfig{
 		URL:     cfg.Database.URL,
 		PoolMax: cfg.Database.PoolMax,
 		Timeout: cfg.Database.Timeout,
@@ -41,9 +41,9 @@ func run() int {
 		fmt.Fprintln(os.Stderr, "Migration failed: "+err.Error())
 		return 1
 	}
-	defer pool.Close()
+	defer mongodb.Close(context.WithoutCancel(ctx), db)
 
-	executed, err := postgres.RunMigrations(ctx, pool, postgres.EmbeddedMigrations(), logger)
+	executed, err := mongodb.RunMigrations(ctx, db, mongodb.Migrations(), logger)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Migration failed: "+err.Error())
 		return 1

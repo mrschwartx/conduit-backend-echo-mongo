@@ -146,7 +146,7 @@ func TestArticleLifecycle(t *testing.T) {
 	if !article.IsAuthoredBy("author") || article.IsAuthoredBy("other") {
 		t.Error("authorship mismatch")
 	}
-	if article.CreatedAt().Nanosecond() != 123456000 || !article.CreatedAt().Equal(article.UpdatedAt()) {
+	if article.CreatedAt().Nanosecond() != 123000000 || !article.CreatedAt().Equal(article.UpdatedAt()) {
 		t.Fatalf("unexpected timestamps %v %v", article.CreatedAt(), article.UpdatedAt())
 	}
 
@@ -158,7 +158,7 @@ func TestArticleLifecycle(t *testing.T) {
 		article.Body().Value() != "Body" || len(article.TagList().Values()) != 0 {
 		t.Fatalf("unexpected article %+v", article.Snapshot())
 	}
-	if !article.UpdatedAt().Equal(later.Truncate(time.Microsecond)) {
+	if !article.UpdatedAt().Equal(later.Truncate(time.Millisecond)) {
 		t.Fatal("updatedAt must advance")
 	}
 

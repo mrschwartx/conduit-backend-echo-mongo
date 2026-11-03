@@ -2,16 +2,16 @@ package users
 
 import (
 	"github.com/labstack/echo/v5"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"conduit/backend/internal/config"
 	"conduit/backend/internal/modules/users/application"
 	"conduit/backend/internal/modules/users/infrastructure"
 	"conduit/backend/internal/modules/users/presentation/rest"
-	"conduit/backend/internal/shared/infrastructure/postgres"
 )
 
 type Dependencies struct {
-	DB     postgres.Querier
+	DB     *mongo.Database
 	Config config.Config
 }
 
@@ -38,8 +38,8 @@ type Module struct {
 
 func NewModule(deps Dependencies) *Module {
 	cfg := deps.Config
-	users := infrastructure.NewPostgresRepository(deps.DB)
-	follows := infrastructure.NewPostgresFollowRepository(deps.DB)
+	users := infrastructure.NewMongoRepository(deps.DB)
+	follows := infrastructure.NewMongoFollowRepository(deps.DB)
 	hasher := infrastructure.NewBcryptHasher(cfg.Auth.BcryptRounds)
 	tokens := infrastructure.NewJWTTokenService(cfg.Auth.Secret, cfg.Auth.TokenTTL)
 
