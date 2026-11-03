@@ -4,6 +4,7 @@ services:
     container_name: conduit-mongo
     restart: unless-stopped
     environment:
+      GLIBC_TUNABLES: glibc.pthread.rseq=1
       MONGO_INITDB_ROOT_USERNAME: ${DB_USER:-conduit}
       MONGO_INITDB_ROOT_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required, run make docker/env}
       MONGO_INITDB_DATABASE: ${DB_NAME:-conduit}
